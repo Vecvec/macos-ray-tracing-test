@@ -3,28 +3,56 @@ use wgpu::{BindGroupDescriptor, BindGroupEntry, BlasBuildEntry, BlasTriangleGeom
 use winit::window::WindowAttributes;
 
 fn main() {
+    let mut tests = Tests::default();
+
     // test w/o event loop
-    run_test();
+    run_test(&mut tests, "no loop");
 
     let event_loop = winit::event_loop::EventLoop::new().unwrap();
 
     // test with event loop, but not window
-    run_test();
+    run_test(&mut tests, "created event loop");
 
-    let mut app = App;
+    let mut app = App(tests);
 
     event_loop.run_app(&mut app).unwrap();
 }
 
-struct App;
+#[derive(Default)]
+struct Tests {
+    all: Vec<String>,
+    total_failure: bool,
+}
+
+impl Tests {
+    fn add(&mut self, name: &str, block_blas: bool, block_tlas: bool, ty: u32) {
+        let success = ty == 1;
+
+        self.total_failure = self.total_failure || !success;
+
+        self.all.push(format!("{name} {block_blas} {block_tlas}: {} (ty: {ty})", if success { "succeeded" } else { "failed" }));
+    }
+
+    fn assert_success(&self) {
+        for case in &self.all {
+            println!("{case}");
+        }
+
+        assert!(!self.total_failure)
+    }
+}
+
+struct App(Tests);
 
 impl winit::application::ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        run_test();
+        run_test(&mut self.0, "active event loop");
 
         let _window = event_loop.create_window(WindowAttributes::default()).unwrap();
 
-        run_test();
+        run_test(&mut self.0, "window");
+
+        self.0.assert_success();
     }
 
     fn window_event(
@@ -37,7 +65,7 @@ impl winit::application::ApplicationHandler for App {
     }
 }
 
-fn run_test() {
+fn run_test(cases: &mut Tests, name: &str) {
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
 
     let adapter = block_on(instance.request_adapter(&RequestAdapterOptions::default())).unwrap();
@@ -64,13 +92,13 @@ fn run_test() {
         cache: None,
     });
 
-    exec_case(&device, &queue, false, false, &pipeline);
-    exec_case(&device, &queue, false, true, &pipeline);
-    exec_case(&device, &queue, true, false, &pipeline);
-    exec_case(&device, &queue, true, true, &pipeline);
+    exec_case(&device, &queue, false, false, &pipeline, cases, name);
+    exec_case(&device, &queue, false, true, &pipeline, cases, name);
+    exec_case(&device, &queue, true, false, &pipeline, cases, name);
+    exec_case(&device, &queue, true, true, &pipeline, cases, name);
 }
 
-fn exec_case(device: &Device, queue: &Queue, block_blas: bool, block_tlas: bool, pipeline: &ComputePipeline) {
+fn exec_case(device: &Device, queue: &Queue, block_blas: bool, block_tlas: bool, pipeline: &ComputePipeline, cases: &mut Tests, name: &str) {
     unsafe { device.start_graphics_debugger_capture(); }
     let tri_sizes = BlasTriangleGeometrySizeDescriptor { vertex_format: wgpu::VertexFormat::Float32x3, vertex_count: 3, index_format: None, index_count: None, flags: AccelerationStructureGeometryFlags::OPAQUE };
     let sizes = wgpu::wgt::BlasGeometrySizeDescriptors::Triangles { descriptors: vec![tri_sizes.clone()] };
@@ -173,5 +201,5 @@ fn exec_case(device: &Device, queue: &Queue, block_blas: bool, block_tlas: bool,
 
     unsafe { device.stop_graphics_debugger_capture(); }
 
-    assert_eq!(res, 1);
+    cases.add(name, block_blas, block_tlas, res);
 }
