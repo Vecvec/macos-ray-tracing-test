@@ -11,6 +11,17 @@ fn main() {
     }
 }
 
+#[test]
+fn test() {
+    loop {
+        let mut tests = Tests::default();
+
+        run_test(&mut tests, "");
+
+        tests.assert_success();
+    }
+}
+
 #[derive(Default)]
 struct Tests {
     all: Vec<String>,
