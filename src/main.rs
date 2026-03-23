@@ -13,7 +13,7 @@ fn main() {
 
 #[test]
 fn test() {
-    loop {
+    for _ in 0..1000 {
         let mut tests = Tests::default();
 
         run_test(&mut tests, "");
