@@ -1,21 +1,14 @@
 use pollster::block_on;
 use wgpu::{BindGroupDescriptor, BindGroupEntry, BlasBuildEntry, BlasTriangleGeometry, BlasTriangleGeometrySizeDescriptor, BufferUsages, ComputePipeline, ComputePipelineDescriptor, Device, ExperimentalFeatures, Features, Limits, Queue, RequestAdapterOptions, TlasInstance, include_wgsl, util::{BufferInitDescriptor, DeviceExt}, wgt::{AccelerationStructureFlags, AccelerationStructureGeometryFlags, BufferDescriptor, CommandEncoderDescriptor, CreateBlasDescriptor, CreateTlasDescriptor, DeviceDescriptor}};
-use winit::window::WindowAttributes;
 
 fn main() {
-    let mut tests = Tests::default();
+    loop {
+        let mut tests = Tests::default();
 
-    // test w/o event loop
-    run_test(&mut tests, "no loop");
+        run_test(&mut tests, "");
 
-    let event_loop = winit::event_loop::EventLoop::new().unwrap();
-
-    // test with event loop, but not window
-    run_test(&mut tests, "created event loop");
-
-    let mut app = App(tests);
-
-    event_loop.run_app(&mut app).unwrap();
+        tests.assert_success();
+    }
 }
 
 #[derive(Default)]
@@ -42,31 +35,8 @@ impl Tests {
     }
 }
 
-struct App(Tests);
-
-impl winit::application::ApplicationHandler for App {
-    fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        run_test(&mut self.0, "active event loop");
-
-        let _window = event_loop.create_window(WindowAttributes::default()).unwrap();
-
-        run_test(&mut self.0, "window");
-
-        self.0.assert_success();
-    }
-
-    fn window_event(
-        &mut self,
-        event_loop: &winit::event_loop::ActiveEventLoop,
-        _window_id: winit::window::WindowId,
-        _event: winit::event::WindowEvent,
-    ) {
-        event_loop.exit();
-    }
-}
-
 fn run_test(cases: &mut Tests, name: &str) {
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
 
     let adapter = block_on(instance.request_adapter(&RequestAdapterOptions::default())).unwrap();
 
