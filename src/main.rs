@@ -29,12 +29,12 @@ struct Tests {
 }
 
 impl Tests {
-    fn add(&mut self, name: &str, block_blas: bool, block_tlas: bool, ty: u32) {
+    fn add(&mut self, name: &str, blas_split: WorkSplitMode, tlas_split: WorkSplitMode, ty: u32) {
         let success = ty == 1;
 
         self.total_failure = self.total_failure || !success;
 
-        self.all.push(format!("{name} {block_blas} {block_tlas}: {} (ty: {ty})", if success { "succeeded" } else { "failed" }));
+        self.all.push(format!("{name} {blas_split:?} {tlas_split:?}: {} (ty: {ty})", if success { "succeeded" } else { "failed" }));
     }
 
     fn assert_success(&self) {
@@ -73,13 +73,27 @@ fn run_test(cases: &mut Tests, name: &str) {
         cache: None,
     });
 
-    exec_case(&device, &queue, false, false, &pipeline, cases, name);
-    exec_case(&device, &queue, false, true, &pipeline, cases, name);
-    exec_case(&device, &queue, true, false, &pipeline, cases, name);
-    exec_case(&device, &queue, true, true, &pipeline, cases, name);
+    for blas_split in MODES {
+        for tlas_slpit in MODES {
+            exec_case(&device, &queue, blas_split, tlas_slpit, &pipeline, cases, name);
+        }
+    }
 }
 
-fn exec_case(device: &Device, queue: &Queue, block_blas: bool, block_tlas: bool, pipeline: &ComputePipeline, cases: &mut Tests, name: &str) {
+#[derive(Debug, Copy, Clone)]
+enum WorkSplitMode {
+    NoSplit,
+    SplitEncoder,
+    WaitEncoder,
+}
+
+const MODES: [WorkSplitMode; 3] = [
+    WorkSplitMode::NoSplit,
+    WorkSplitMode::SplitEncoder,
+    WorkSplitMode::WaitEncoder,
+];
+
+fn exec_case(device: &Device, queue: &Queue, blas_split: WorkSplitMode, tlas_split: WorkSplitMode, pipeline: &ComputePipeline, cases: &mut Tests, name: &str) {
     unsafe { device.start_graphics_debugger_capture(); }
     let tri_sizes = BlasTriangleGeometrySizeDescriptor { vertex_format: wgpu::VertexFormat::Float32x3, vertex_count: 3, index_format: None, index_count: None, flags: AccelerationStructureGeometryFlags::OPAQUE };
     let sizes = wgpu::wgt::BlasGeometrySizeDescriptors::Triangles { descriptors: vec![tri_sizes.clone()] };
@@ -110,6 +124,8 @@ fn exec_case(device: &Device, queue: &Queue, block_blas: bool, block_tlas: bool,
         usage: BufferUsages::BLAS_INPUT,
     });
 
+    let mut command_buffers = Vec::new();
+
     let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
         label: Some("base encoder"),
     });
@@ -119,18 +135,37 @@ fn exec_case(device: &Device, queue: &Queue, block_blas: bool, block_tlas: bool,
         geometry: wgpu::BlasGeometries::TriangleGeometries(vec![BlasTriangleGeometry { size: &tri_sizes, vertex_buffer: &buffer, first_vertex: 0, vertex_stride: 12, index_buffer: None, first_index: None, transform_buffer: None, transform_buffer_offset: None }]),
     }], []);
 
-    if block_blas {
-        queue.submit([encoder.finish()]);
-        device.poll(wgpu::wgt::PollType::wait_indefinitely()).unwrap();
-        encoder = device.create_command_encoder(&Default::default());
+
+    match blas_split {
+        WorkSplitMode::NoSplit => {},
+        WorkSplitMode::SplitEncoder => {
+            command_buffers.push(encoder.finish());
+            encoder = device.create_command_encoder(&Default::default());
+        },
+        WorkSplitMode::WaitEncoder => {
+            command_buffers.push(encoder.finish());
+            queue.submit(command_buffers);
+            device.poll(wgpu::wgt::PollType::wait_indefinitely()).unwrap();
+            command_buffers = Vec::new();
+            encoder = device.create_command_encoder(&Default::default());
+        },
     }
 
     encoder.build_acceleration_structures([], [&tlas]);
 
-    if block_tlas {
-        queue.submit([encoder.finish()]);
-        device.poll(wgpu::wgt::PollType::wait_indefinitely()).unwrap();
-        encoder = device.create_command_encoder(&Default::default());
+    match tlas_split {
+        WorkSplitMode::NoSplit => {},
+        WorkSplitMode::SplitEncoder => {
+            command_buffers.push(encoder.finish());
+            encoder = device.create_command_encoder(&Default::default());
+        },
+        WorkSplitMode::WaitEncoder => {
+            command_buffers.push(encoder.finish());
+            queue.submit(command_buffers);
+            device.poll(wgpu::wgt::PollType::wait_indefinitely()).unwrap();
+            command_buffers = Vec::new();
+            encoder = device.create_command_encoder(&Default::default());
+        },
     }
 
     let out_buf = device.create_buffer(&BufferDescriptor {
@@ -168,7 +203,8 @@ fn exec_case(device: &Device, queue: &Queue, block_blas: bool, block_tlas: bool,
 
     encoder.copy_buffer_to_buffer(&out_buf, 0, &read_back, 0, out_buf.size());
 
-    queue.submit([encoder.finish()]);
+    command_buffers.push(encoder.finish());
+    queue.submit(command_buffers);
     read_back.map_async(wgpu::MapMode::Read, .., |res| res.unwrap());
     device.poll(wgpu::wgt::PollType::wait_indefinitely()).unwrap();
 
@@ -182,5 +218,5 @@ fn exec_case(device: &Device, queue: &Queue, block_blas: bool, block_tlas: bool,
 
     unsafe { device.stop_graphics_debugger_capture(); }
 
-    cases.add(name, block_blas, block_tlas, res);
+    cases.add(name, blas_split, tlas_split, res);
 }
