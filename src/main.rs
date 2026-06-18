@@ -2,10 +2,12 @@ use pollster::block_on;
 use wgpu::{BindGroupDescriptor, BindGroupEntry, BlasBuildEntry, BlasTriangleGeometry, BlasTriangleGeometrySizeDescriptor, BufferUsages, ComputePipeline, ComputePipelineDescriptor, Device, ExperimentalFeatures, Features, Limits, Queue, RequestAdapterOptions, TlasInstance, include_wgsl, util::{BufferInitDescriptor, DeviceExt}, wgt::{AccelerationStructureFlags, AccelerationStructureGeometryFlags, BufferDescriptor, CommandEncoderDescriptor, CreateBlasDescriptor, CreateTlasDescriptor, DeviceDescriptor}};
 
 fn main() {
+    let mut i = 0u32;
     loop {
+        i += 1;
         let mut tests = Tests::default();
 
-        run_test(&mut tests, "");
+        run_test(&mut tests, &format!("test {i}"));
 
         tests.assert_success();
     }
@@ -208,7 +210,7 @@ fn exec_case(device: &Device, queue: &Queue, blas_split: WorkSplitMode, tlas_spl
     read_back.map_async(wgpu::MapMode::Read, .., |res| res.unwrap());
     device.poll(wgpu::wgt::PollType::wait_indefinitely()).unwrap();
 
-    let range = read_back.get_mapped_range(..);
+    let range = read_back.get_mapped_range(..).unwrap();
 
     let res = u32::from_ne_bytes(*bytemuck::from_bytes(&range));
 

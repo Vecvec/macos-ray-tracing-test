@@ -5,6 +5,6 @@ edition = "2024"
 
 [dependencies]
 winit = "0.30.13"
-wgpu = { git = "https://github.com/gfx-rs/wgpu.git" }
+wgpu = { git = "https://github.com/gfx-rs/wgpu.git", rev = "59a252f24726c38d2c7691cb63924d112e33a9fa" }
 pollster = "0.4.0"
 bytemuck = "1.25.0"
