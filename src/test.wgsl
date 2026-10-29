@@ -17,5 +17,5 @@ fn test() {
 
     let intersection = rayQueryGetCommittedIntersection(&rq);
 
-    has_hit = intersection.kind;
+    has_hit = intersection.instance_index;
 }
